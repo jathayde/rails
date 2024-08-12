@@ -40,6 +40,12 @@ module RailsGuides
     end
 
     def generate
+      if !dry_run?
+        # this needs to run before generate guides in order to get the hash values for the CSS files
+        process_scss
+        copy_assets
+      end
+
       generate_guides
 
       if @lint && @warnings.any?
@@ -48,8 +54,6 @@ module RailsGuides
       end
 
       if !dry_run?
-        process_scss
-        copy_assets
         generate_epub if @epub
       end
     end
@@ -143,7 +147,7 @@ module RailsGuides
             hash = Digest::MD5.file(output_file).hexdigest
             new_output_filename = output.sub(/\.css\z/, "-#{hash}.css")
             new_output_path = "#{@output_dir}/stylesheets/#{new_output_filename}"
-            FileUtils.mv(output_file, new_output_filename)
+            FileUtils.mv(output_file, new_output_path)
             @css_files_with_digest[output] = new_output_filename
           end
         end
@@ -152,7 +156,8 @@ module RailsGuides
       # Copy all assets except the stylesrc directory with md5 hashes as well
       def copy_assets
         # Reject the source SCSS files from being included in the copy
-        source_files = Dir.glob("#{@guides_dir}/assets/*").reject { |name| name.include?("stylesrc") }
+        source_directories = Dir.glob("#{@guides_dir}/assets/*").reject { |name| name.include?("stylesrc") }
+        source_files = [] # NEED TO FIGURE OUT
       
         # MD5 the files, update the name, and copy them to the output directory
         source_files.each do |file|
