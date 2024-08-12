@@ -51,5 +51,10 @@ module RailsGuides
       c = capture(&block)
       content_tag(:code, c)
     end
+
+    def css_file_with_digest(original_filename)
+      return original_filename unless @css_files_with_digest
+      @css_files_with_digest[original_filename] || original_filename
+    end
   end
 end

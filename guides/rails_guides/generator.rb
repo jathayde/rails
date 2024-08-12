@@ -4,6 +4,7 @@ require "set"
 require "fileutils"
 require "nokogiri"
 require "securerandom"
+require "digest"
 
 require "active_support/core_ext/string/output_safety"
 require "active_support/core_ext/object/blank"
@@ -121,15 +122,55 @@ module RailsGuides
       end
 
       def process_scss
-        system "bundle exec dartsass \
-          #{@guides_dir}/assets/stylesrc/style.scss:#{@output_dir}/stylesheets/style.css \
-          #{@guides_dir}/assets/stylesrc/highlight.scss:#{@output_dir}/stylesheets/highlight.css \
-          #{@guides_dir}/assets/stylesrc/print.scss:#{@output_dir}/stylesheets/print.css"
+        # Initialize the hash to store the css files with digest
+        @css_files_with_digest = {}
+
+        # The sass source and their corresponding finished css names
+        scss_source =[
+          ["style.scss", "style.css"],
+          ["highlight.scss", "highlight.css"],
+          ["print.scss", "print.css"]
+        ]
+
+        # Process each file, add a cache, and move the file into place. 
+        scss_source.each do |source, output|
+          source_file = "#{@guides_dir}/assets/stylesrc/#{source}"
+          output_file = "#{@output_dir}/stylesheets/#{output}"
+
+          system "bundle exec dartsass #{source_file}:#{output_file}"
+
+          if File.exist?(output_file)
+            hash = Digest::MD5.file(output_file).hexdigest
+            new_output_filename = output.sub(/\.css\z/, "-#{hash}.css")
+            new_output_path = "#{@output_dir}/stylesheets/#{new_output_filename}"
+            FileUtils.mv(output_file, new_output_filename)
+            @css_files_with_digest[output] = new_output_filename
+          end
+        end
       end
 
+      # Copy all assets except the stylesrc directory with md5 hashes as well
       def copy_assets
+        # Reject the source SCSS files from being included in the copy
         source_files = Dir.glob("#{@guides_dir}/assets/*").reject { |name| name.include?("stylesrc") }
-        FileUtils.cp_r(source_files, @output_dir)
+      
+        # MD5 the files, update the name, and copy them to the output directory
+        source_files.each do |file|
+          if File.file?(file)
+            hash = Digest::MD5.file(file).hexdigest
+            ext = File.extname(file)
+            basename = File.basename(file, ext)
+            new_filename = "#{basename}-#{hash}#{ext}"
+            
+            FileUtils.cp(file, "#{@output_dir}/#{new_filename}")
+          else
+            FileUtils.cp_r(file, @output_dir)
+          end
+        end
+      end
+
+      def css_file_with_digest(original_filename)
+        @css_files_with_digest[original_filename] || original_filename
       end
 
       def output_file_for(guide)
@@ -157,12 +198,13 @@ module RailsGuides
 
         view = ActionView::Base.with_empty_template_cache.with_view_paths(
           [@source_dir],
-          edge:     @edge,
-          version:  @version,
-          epub:     "epub/#{epub_filename}",
-          language: @language,
-          direction: @direction,
-          uuid:      SecureRandom.uuid
+          edge:                  @edge,
+          version:               @version,
+          epub:                  "epub/#{epub_filename}",
+          language:              @language,
+          direction:             @direction,
+          uuid:                  SecureRandom.uuid,
+          css_files_with_digest: @css_files_with_digest
         )
         view.extend(Helpers)
 
